@@ -310,6 +310,9 @@ class TripoSGScribblePipeline(DiffusionPipeline, TransformerDiffusionMixin):
                     progress_bar.update()
 
         # 7. decoder mesh
+        import time
+        time_start = time.time()
+        print("Starting decoder mesh...")
         if not use_flash_decoder:
             geometric_func = lambda x: self.vae.decode(latents, sampled_points=x).sample
             output = hierarchical_extract_geometry(
@@ -328,6 +331,8 @@ class TripoSGScribblePipeline(DiffusionPipeline, TransformerDiffusionMixin):
                 octree_depth=flash_octree_depth,
             )
         meshes = [trimesh.Trimesh(mesh_v_f[0].astype(np.float32), mesh_v_f[1]) for mesh_v_f in output]
+        time_end = time.time()
+        print(f"Time taken for decoder: {time_end - time_start:.2f} seconds")
         
         # Offload all models
         self.maybe_free_model_hooks()

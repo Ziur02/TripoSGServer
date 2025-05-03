@@ -37,7 +37,7 @@ def run_triposg_scribble(
         guidance_scale=0, # this is a CFG-distilled model
         attention_kwargs={"cross_attention_scale": prompt_confidence, "cross_attention_2_scale": scribble_confidence},
         use_flash_decoder=False, # there're some boundary problems when using flash decoder with this model
-        dense_octree_depth=8, hierarchical_octree_depth=8 # 256 resolution for faster inference
+        dense_octree_depth=6, hierarchical_octree_depth=6 # 256 resolution for faster inference
     ).samples[0]
     mesh = trimesh.Trimesh(outputs[0].astype(np.float32), np.ascontiguousarray(outputs[1]))    
     return mesh
