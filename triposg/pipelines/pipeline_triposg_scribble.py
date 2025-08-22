@@ -205,6 +205,8 @@ class TripoSGScribblePipeline(DiffusionPipeline, TransformerDiffusionMixin):
         flash_octree_depth: int = 9,
         use_flash_decoder: bool = True,
         return_dict: bool = True,
+        return_voxel: bool = False,
+        voxel_resolution: int = 50,
     ):
         self._guidance_scale = guidance_scale
         self._attention_kwargs = attention_kwargs
@@ -309,35 +311,47 @@ class TripoSGScribblePipeline(DiffusionPipeline, TransformerDiffusionMixin):
                 ):
                     progress_bar.update()
 
-        # 7. decoder mesh
-        import time
-        time_start = time.time()
-        print("Starting decoder mesh...")
-        if not use_flash_decoder:
-            geometric_func = lambda x: self.vae.decode(latents, sampled_points=x).sample
-            output = hierarchical_extract_geometry(
-                geometric_func,
-                device,
-                bounds=bounds,
-                dense_octree_depth=dense_octree_depth,
-                hierarchical_octree_depth=hierarchical_octree_depth,
-            )
+        # torch.save(latents, "latents.pt")
+        
+        # 7. decode latents and calculate voxel or mesh
+        if return_voxel:
+            dim = torch.linspace(-1.005, 1.005, voxel_resolution, dtype=torch.float16)
+            grid = torch.stack(torch.meshgrid(dim, dim, dim, indexing="ij"), dim=-1).reshape(-1, 3)
+            grid = grid.unsqueeze(0).to(device=device, dtype=torch.float16)  # [1, N, 3]
+            grid_logits = self.vae.decode(latents, grid).sample.to(dtype=torch.float16).view(voxel_resolution, voxel_resolution, voxel_resolution)
+            sdf = torch.sigmoid(grid_logits) * 2 - 1
+            voxel_bools = (sdf < 0).cpu().numpy().astype(np.uint8)
+            voxel_bools = voxel_bools.flatten().tolist()
+            output = voxel_bools
         else:
-            self.vae.set_flash_decoder()
-            output = flash_extract_geometry(
-                latents,
-                self.vae,
-                bounds=bounds,
-                octree_depth=flash_octree_depth,
-            )
-        meshes = [trimesh.Trimesh(mesh_v_f[0].astype(np.float32), mesh_v_f[1]) for mesh_v_f in output]
-        time_end = time.time()
-        print(f"Time taken for decoder: {time_end - time_start:.2f} seconds")
+            import time
+            time_start = time.time()
+            print("Starting decoder mesh...")
+            if not use_flash_decoder:
+                geometric_func = lambda x: self.vae.decode(latents, sampled_points=x).sample
+                output = hierarchical_extract_geometry(
+                    geometric_func,
+                    device,
+                    bounds=bounds,
+                    dense_octree_depth=dense_octree_depth,
+                    hierarchical_octree_depth=hierarchical_octree_depth,
+                )
+            else:
+                self.vae.set_flash_decoder()
+                output = flash_extract_geometry(
+                    latents,
+                    self.vae,
+                    bounds=bounds,
+                    octree_depth=flash_octree_depth,
+                )
+            # meshes = [trimesh.Trimesh(mesh_v_f[0].astype(np.float32), mesh_v_f[1]) for mesh_v_f in output]
+            time_end = time.time()
+            print(f"Time taken for decoder: {time_end - time_start:.2f} seconds")
         
         # Offload all models
         self.maybe_free_model_hooks()
 
         if not return_dict:
-            return (output, meshes)
+            return (output)
 
-        return TripoSGPipelineOutput(samples=output, meshes=meshes)
+        return TripoSGPipelineOutput(samples=output)

@@ -13,5 +13,5 @@ class TripoSGPipelineOutput(BaseOutput):
     Output class for ShapeDiff pipelines.
     """
 
-    samples: torch.Tensor
-    meshes: List[trimesh.Trimesh]
+    samples: torch.Tensor|np.ndarray
+    # meshes: List[trimesh.Trimesh]
